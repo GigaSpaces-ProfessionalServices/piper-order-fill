@@ -20,7 +20,7 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
         }
 
         public int threadRun(FillProcessor fillProcessor, ISpaceProxy spaceProxy, ClusterInfo clusterInfo,
-                            long intervalSize, StatRecord statRecord)
+                            long intervalSize, StatRecord statRecord, int totalRetries, int retryWaitTime)
         {
             long partionId = (long)(clusterInfo.InstanceId - 1);
             long[] intervals = new long[200];
@@ -160,7 +160,6 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
                 }
                 // fillTimer.StartTimer();
                 long fillTImeElapsed = DateTime.Now.Ticks;
-                ITransaction tx2 = txManager.Create();
 
                 ICollection<String> projections = new List<String>();
                 projections.Add(new String("OrderID".ToCharArray()));
@@ -170,55 +169,76 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
                 IdQuery<GS_Order> idQuery = new IdQuery<GS_Order>(newFillMsg.OrderID);
                 idQuery.Projections = projections;
 
-                GS_Order orderRead = spaceProxy.Read<GS_Order>(idQuery, tx2, 1000 * 60, ReadModifiers.ExclusiveReadLock);
-                //GS_Order orderRead = spaceProxy.Read<GS_Order>(idQuery);
-                //GS_Order orderRead = spaceProxy.Read<GS_Order>(idQuery, tx2);
-
-                fill.FillID = nextFillID;
-                //                fill.FillID = nextFillID++;
-                fill.OrderID = newFillMsg.OrderID;
-                fill.LastShares = newFillMsg.LastShares;
-                fill.LastPrice = newFillMsg.LastPrice;
-                nextFillID = nextFillID + noOfInstances;
-
-                //Console.WriteLine("Writting Order: {0} {1} ", order.OrderID, order.Symbol);
-                int retries = 5;
+                int retries = totalRetries;
                 while (retries > 0)
                 {
+                    ITransaction tx2 = txManager.Create();
                     try
-                    {
+                    {  
+                        GS_Order orderRead = spaceProxy.Read<GS_Order>(idQuery, tx2, 1000 * 60, ReadModifiers.ExclusiveReadLock);
+                        fill.FillID = nextFillID;
+                        //                fill.FillID = nextFillID++;
+                        fill.OrderID = newFillMsg.OrderID;
+                        fill.LastShares = newFillMsg.LastShares;
+                        fill.LastPrice = newFillMsg.LastPrice;
+                        nextFillID = nextFillID + noOfInstances;
                         spaceProxy.Write(fill, tx2, long.MaxValue, 1000);
+                        IdQuery<GS_Order> orderWrite = new IdQuery<GS_Order>(newFillMsg.OrderID);
+                        ChangeSet orderChange = new ChangeSet();
+                        orderChange.Increment("CalCumQty", newFillMsg.LastShares);
+                        orderChange.Increment("CalExecValue", (newFillMsg.LastPrice * newFillMsg.LastShares));
+
+                        IChangeResult<GS_Order> orderChangeResults = spaceProxy.Change<GS_Order>(orderWrite, orderChange, tx2, 1000, ChangeModifiers.MemoryOnlySearch);
+                        tx2.Commit(1000 * 60);
+                        break;
                     }
                     catch (Exception ex)
                     {
-                        Thread.Sleep(5000);
-                        if (retries == 5)
+                        Thread.Sleep(retryWaitTime);
+                        if (retries == totalRetries)
                         {
-                            Logger.Write("");
+                            Logger.Write("retrying 1st time ...");
                         }
-                        if (retries == 1) {
-                            Logger.Write("SEVERE : Max limit reached");
-                            
+                        if (retries == 1)
+                        {
+                            Logger.Write("SEVERE : Max limit reached , " + ex.StackTrace);
+                            throw;
                         }
+                        tx2.Abort();
+                        retries--;
                     }
                 }
+               
+
+                
+
+                //  --  GS_Order orderRead = spaceProxy.Read<GS_Order>(idQuery, tx2, 1000 * 60, ReadModifiers.ExclusiveReadLock);
+               
+                //GS_Order orderRead = spaceProxy.Read<GS_Order>(idQuery);
+                //GS_Order orderRead = spaceProxy.Read<GS_Order>(idQuery, tx2);
+
+               
+
+                //Console.WriteLine("Writting Order: {0} {1} ", order.OrderID, order.Symbol);
+                //  --  spaceProxy.Write(fill, tx2, long.MaxValue, 1000);
+            
                 // spaceProxy.Write(fill);
                 //Console.WriteLine("FillProcessorThread {0} - added fill", fillProcessor.WorkerID );
 
                 /*    GS_Order orderWrite = new GS_Order();
                     orderWrite.OrderID = orderRead.OrderID;*/
-                IdQuery<GS_Order> orderWrite = new IdQuery<GS_Order>(newFillMsg.OrderID);
+         /*       IdQuery<GS_Order> orderWrite = new IdQuery<GS_Order>(newFillMsg.OrderID);
 
 
                 ChangeSet orderChange = new ChangeSet();
                 orderChange.Increment("CalCumQty", newFillMsg.LastShares);
-                orderChange.Increment("CalExecValue", (newFillMsg.LastPrice * newFillMsg.LastShares));
-                IChangeResult<GS_Order> orderChangeResults =
-                      spaceProxy.Change<GS_Order>(orderWrite, orderChange, tx2, 1000, ChangeModifiers.MemoryOnlySearch);
-                //spaceProxy.Change<GS_Order>(orderWrite, orderChange);
-                tx2.Commit(1000 * 60);
+                orderChange.Increment("CalExecValue", (newFillMsg.LastPrice * newFillMsg.LastShares));*/
 
-        
+                //  -- IChangeResult<GS_Order> orderChangeResults = spaceProxy.Change<GS_Order>(orderWrite, orderChange, tx2, 1000, ChangeModifiers.MemoryOnlySearch);
+                //spaceProxy.Change<GS_Order>(orderWrite, orderChange);
+                //  -- tx2.Commit(1000 * 60);
+
+            
                 fillProcessor.fillCnt++;
 
                 if ((fillProcessor.fillCnt % intervalSize) == 0)

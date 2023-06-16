@@ -33,6 +33,8 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
         static long orderQty = 10;
         static int numOrderWorkers = 1;
         static int numFillProcessorWorkers = 10;
+        static int totalRetries = 5;
+        static int retryWaitTime = 5000;
 
 
         bool? isStartedAsPrimary;
@@ -82,6 +84,14 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
             container.Properties.TryGetValue("NumFillProcessorWorkers", out tempVal);
             if (!string.IsNullOrEmpty(tempVal))
                 numFillProcessorWorkers = int.Parse(tempVal);
+
+            container.Properties.TryGetValue("TotalRetries", out tempVal);
+            if (!string.IsNullOrEmpty(tempVal))
+                totalRetries = int.Parse(tempVal);
+           
+            container.Properties.TryGetValue("RetryWaitTime", out tempVal);
+            if (!string.IsNullOrEmpty(tempVal))
+                retryWaitTime = int.Parse(tempVal);
         }
         [BeforePrimary]
         public void beforePrimaryEvent(ISpaceProxy proxy, SpaceMode spaceMode)
@@ -204,8 +214,8 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
             //    startPU(spaceProxy, spaceMode, clusterInfo);
 
             // For recovery comment below 2 lines, then uncomment
-           // Thread thread = new Thread(() => new OP().startPU(spaceProxy, spaceMode, clusterInfo));
-           // thread.Start();
+            Thread thread = new Thread(() => new OP().startPU(spaceProxy, spaceMode, clusterInfo));
+            thread.Start();
             Logger.Write(">>>>> post primary -> postPrimaryEvent " + spaceProxy.Name + ", spaceMode: " + spaceMode.ToString()
                            + " started thread ");
         }
@@ -282,7 +292,7 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
 
                         FillProcessor fillProcessor = new FillProcessor(i, spaceProxy, fillQueue, totalFills / numFillProcessorWorkers, lastGSFillID);
                         Thread thread = new Thread(() => new FillProcessorThread().threadRun(fillProcessor, spaceProxy, clusterInfo,
-                                                                                        fillSampleSize, fillstatRecord));
+                                                                                        fillSampleSize, fillstatRecord, totalRetries, retryWaitTime));
                         thread.Start();
                         fillProcessorIDs.Add(thread);
                         fillProcessorWorkers.Add(fillProcessor);
@@ -293,7 +303,7 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
                 {
                     OrderProcessorThread orderProcessorThread = new OrderProcessorThread(i, spaceProxy, orderQueue, ordCnt / numOrderWorkers, orderQty, lastGSOrderID);
                     Thread thread = new Thread(() => new OrderProcessorThreadCB().threadRun(orderProcessorThread, spaceProxy, partionId, clusterInfo,
-                                                                                                orderSampleSize, orderstatRecord));
+                                                                                                orderSampleSize, orderstatRecord,totalRetries, retryWaitTime));
                     thread.Start();
                     orderProcessorIDs.Add(thread);
                     orderProcessorWorkers.Add(orderProcessorThread);
@@ -327,7 +337,7 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
 
                         FillProcessor fillProcessor = new FillProcessor(i, spaceProxy, fillQueue, totalFills / numFillProcessorWorkers, lastGSFillID);
                         Thread thread = new Thread(() => new FillProcessorThread().threadRun(fillProcessor, spaceProxy, clusterInfo,
-                                                                                                fillSampleSize, fillstatRecord));
+                                                                                                fillSampleSize, fillstatRecord, totalRetries, retryWaitTime));
                         thread.Start();
                         fillProcessorIDs.Add(thread);
                         fillProcessorWorkers.Add(fillProcessor);

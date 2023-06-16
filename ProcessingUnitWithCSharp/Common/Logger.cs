@@ -20,7 +20,7 @@ namespace GigaSpaces.Examples.ProcessingUnit.Common
         {
             string fileName = "DataProcessor_" + partionid.ToString() + "_" +
                             DateTime.Now.ToString("yyyyMMdd") + ".log";
-            string fileNamePath = "C:\\GigaSpaces\\smart-cache.net-16.2.1-x64\\NET v4.0\\Logs\\" + fileName;
+            string fileNamePath = "C:\\GigaSpaces\\XAP.NET-16.3.0-patch-p-3-x64\\NET v4.0\\Logs\\" + fileName;
             fs = new FileStream(fileNamePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
 
             _logFileStream = new StreamWriter(fs);

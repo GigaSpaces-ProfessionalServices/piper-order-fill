@@ -22,7 +22,7 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
 
         //long partionId;
         public int threadRun(OrderProcessorThread orderProcessor, ISpaceProxy spaceProxy, long partionId, ClusterInfo clusterInfo,
-                                long intervalSize, StatRecord statRecord)
+                                long intervalSize, StatRecord statRecord, int totalRetries, int retryWaitTime)
         {
             long[] intervals = new long[200];
             int intervalIdx = 0;
@@ -213,17 +213,41 @@ namespace GigaSpaces.Examples.ProcessingUnit.Processor
                 {
                     continue;
                 }
-         
-                ITransaction tx1 = txManager.Create();
-                order.OrderID = j;
-
-             
+                int retries = totalRetries;
+                while (retries > 0)
+                {
+                    ITransaction tx1 = txManager.Create();
+                    try
+                    {
+                        order.OrderID = j;
+                        spaceProxy.Write(order, tx1, long.MaxValue, 1000 * 60);
+                        tx1.Commit();
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        Thread.Sleep(retryWaitTime);
+                        if (retries == totalRetries)
+                        {
+                            Logger.Write("retrying 1st time ...");
+                        }
+                        if (retries == 1)
+                        {
+                            Logger.Write("SEVERE : Max limit reached , " + ex.StackTrace);
+                            throw;
+                        }
+                        tx1.Abort();
+                        retries--;
+                    }
+                }
                
-                spaceProxy.Write(order, tx1, long.MaxValue, 1000 * 60);
+
+
+                //  -- spaceProxy.Write(order, tx1, long.MaxValue, 1000 * 60);
                 //spaceProxy.Write(order);
-                tx1.Commit();
+                //  -- tx1.Commit();
 
-               
+
 
                 OrderMsg orderMsg = new OrderMsg(order.OrderID, order.Quantity, order.Price.Value);
                 /*if (orderMsg == null) {
